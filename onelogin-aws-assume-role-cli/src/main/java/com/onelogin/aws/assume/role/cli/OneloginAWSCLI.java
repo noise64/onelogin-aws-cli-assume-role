@@ -240,6 +240,7 @@ public class OneloginAWSCLI {
 					}
 				} else {
 					TimeUnit.MINUTES.sleep(time);
+					mfaVerifyInfo = null;
 				}
 
 				result = getSamlResponse(olClient, scanner, oneloginUsernameOrEmail, oneloginPassword, appId,
