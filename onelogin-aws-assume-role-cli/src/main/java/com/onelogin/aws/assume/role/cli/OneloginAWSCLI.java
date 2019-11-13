@@ -1,20 +1,5 @@
 package com.onelogin.aws.assume.role.cli;
 
-import java.io.File;
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.Scanner;
-import java.util.concurrent.TimeUnit;
-
-import org.apache.commons.cli.CommandLine;
-import org.apache.commons.cli.CommandLineParser;
-import org.apache.commons.cli.DefaultParser;
-import org.apache.commons.cli.HelpFormatter;
-import org.apache.commons.cli.Options;
-import org.apache.commons.cli.ParseException;
-
 import com.amazonaws.auth.AWSStaticCredentialsProvider;
 import com.amazonaws.auth.BasicAWSCredentials;
 import com.amazonaws.auth.profile.ProfilesConfigFileWriter;
@@ -24,17 +9,21 @@ import com.amazonaws.profile.path.AwsProfileFileLocationProvider;
 import com.amazonaws.regions.Regions;
 import com.amazonaws.services.securitytoken.AWSSecurityTokenService;
 import com.amazonaws.services.securitytoken.AWSSecurityTokenServiceClientBuilder;
-import com.amazonaws.services.securitytoken.model.AWSSecurityTokenServiceException;
-import com.amazonaws.services.securitytoken.model.AssumeRoleWithSAMLRequest;
-import com.amazonaws.services.securitytoken.model.AssumeRoleWithSAMLResult;
-import com.amazonaws.services.securitytoken.model.AssumedRoleUser;
-import com.amazonaws.services.securitytoken.model.Credentials;
+import com.amazonaws.services.securitytoken.model.*;
 import com.onelogin.saml2.authn.SamlResponse;
 import com.onelogin.saml2.http.HttpRequest;
 import com.onelogin.sdk.conn.Client;
 import com.onelogin.sdk.model.Device;
 import com.onelogin.sdk.model.MFA;
 import com.onelogin.sdk.model.SAMLEndpointResponse;
+import org.apache.commons.cli.*;
+
+import java.io.File;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Scanner;
+import java.util.concurrent.TimeUnit;
 
 public class OneloginAWSCLI {
 
@@ -203,7 +192,7 @@ public class OneloginAWSCLI {
 		}
 
 		// OneLogin Java SDK Client
-		Client olClient = new Client();		
+		Client olClient = new Client();
 		String ip = olClient.getIP();
 		olClient.getAccessToken();
 		Scanner scanner = new Scanner(System.in);
@@ -484,7 +473,9 @@ public class OneloginAWSCLI {
 					deviceIdStr = deviceId.toString();
 
 					System.out.print("Enter the OTP Token for " + deviceSelection.getType() + ": ");
-					otpToken = scanner.next();
+					// otpToken = scanner.next();
+					// We set it to null to use push
+					otpToken = null;
 					stateToken = mfa.getStateToken();
 					mfaVerifyInfo = new HashMap<String, String>();
 					mfaVerifyInfo.put("otpToken", otpToken);
@@ -495,7 +486,7 @@ public class OneloginAWSCLI {
 				}
 				result = verifyToken(olClient, scanner, appId,
 						deviceIdStr, stateToken, otpToken, mfaVerifyInfo);
-				
+
 			} else {
 				samlResponse = samlEndpointResponse.getSAMLResponse();
 				result.put("samlResponse", samlResponse);
@@ -539,22 +530,35 @@ public class OneloginAWSCLI {
 		}
 		return false;
 	}
-	
+
 	public static Map<String, Object> verifyToken(Client olClient, Scanner scanner, String appId,
 			String deviceIdStr, String stateToken, String otpToken, Map<String, String> mfaVerifyInfo) {
 		Map<String, Object> result = new HashMap<String, Object>();
+		boolean verified = false;
+		boolean first = true;
+		System.out.println();
 		try {
-			SAMLEndpointResponse samlEndpointResponseAfterVerify = olClient.getSAMLAssertionVerifying(appId,
-				deviceIdStr, stateToken, otpToken, null);
-			mfaVerifyInfo.put("otpToken", otpToken);
-			String samlResponse = samlEndpointResponseAfterVerify.getSAMLResponse();	
-			result.put("samlResponse", samlResponse);
-			result.put("mfaVerifyInfo", mfaVerifyInfo);
+			while (!verified) {
+				SAMLEndpointResponse samlEndpointResponseAfterVerify = olClient.getSAMLAssertionVerifying(appId,
+						deviceIdStr, stateToken, otpToken, null, !first);
+				mfaVerifyInfo.put("otpToken", otpToken);
+				System.out.println(samlEndpointResponseAfterVerify.getMessage());
+
+				String samlResponse = samlEndpointResponseAfterVerify.getSAMLResponse();
+				if (samlResponse != null) {
+					result.put("samlResponse", samlResponse);
+					result.put("mfaVerifyInfo", mfaVerifyInfo);
+					verified = true;
+				} else {
+					first = false;
+					TimeUnit.SECONDS.sleep(1);
+				}
+			}
 		} catch (Exception OAuthProblemException){
 			System.out.print("The OTP Token was invalid, please introduce a new one: ");
 			otpToken = scanner.next();
 			result = verifyToken(olClient, scanner, appId,
-					deviceIdStr, stateToken, otpToken, mfaVerifyInfo);		
+					deviceIdStr, stateToken, otpToken, mfaVerifyInfo);
 		}
 		return result;
 	}
